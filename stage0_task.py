@@ -20,7 +20,7 @@ def safe_prompt(prompt: str) -> bool:
 
 def safe_output(text: str) -> str:
     safe_text = text
-    for word in BANNED_KEYWORDS:
+    for word in banned_keywords:
         safe_text = safe_text.replace(word, "[REDACTED]").replace(word.capitalize(), "[REDACTED]")
     return safe_text
 
