@@ -1,16 +1,26 @@
 import os
 from dotenv import load_dotenv
-from huggingface_hub import InferenceClient
+
+
+try:
+    from huggingface_hub import InferenceClient
+except ImportError:
+    InferenceClient = None
 
 load_dotenv()
 hf_token = os.getenv("HF_TOKEN")
-try:
-    repo_id = "Qwen/Qwen2.5-72B-Instruct"
-    client = InferenceClient(model=repo_id, token=hf_token)
-except ImportError:
-    print("Error: huggingface_hub not yet installed")
-    exit(1)
+repo_id = "Qwen/Qwen2.5-72B-Instruct"
+client = None
 
+if InferenceClient is None:
+    print("Error: huggingface_hub not installed or failed to import.")
+else:
+    try:
+        client = InferenceClient(repo_id, token=hf_token)
+    except Exception as e:
+        print("Error creating InferenceClient")
+        client = None
+        
 import time
 import random
 from typing import List, Any
@@ -23,13 +33,40 @@ class Synapse:
         self.template = prompt_template
         self.name = name
 
+    @staticmethod
+    def _parse_hf_response(resp: any) -> str:
+        if isinstance(resp, str):
+            return resp.strip()
+
+        try:
+            content = getattr(resp.choices[0].message, "content", None)
+
+            if content:
+                return str(content).strip()
+        except Exception:
+            pass
+
+        try:
+            if isinstance(resp, dict):
+                return str(resp["choices"][0]["message"]["content"]).strip()
+        except Exception:
+            pass
+
+        try:
+            return str(resp).strip()
+        except Exception:
+            return ""
+
     def _fire_synapse(self, context_str: str, original_query: str) -> str:
+        if client is None:
+            return "Error: InferenceClient not initialized. HF client is not available."
+
         print(f" Processing {self.name}...")
         prompt_content = self.template.replace("{{input}}", context_str)
         prompt_content = prompt_content.replace("{{previous_output}}", context_str)
         prompt_content = prompt_content.replace("{{original_query}}", original_query)
 
-        system_instruction = "You are a senior developer at a big tech company. Output ONLY the requested value. Do not converse."
+        system_instruction = "You are an intelligent customer support system for a bank that converses with customers and helps solve their problems.. Output ONLY the requested value. Do not converse or make extra commentary."
 
         messages = [
                     {"role": "system", "content": system_instruction},
@@ -38,20 +75,25 @@ class Synapse:
 
         try:
             response = client.chat_completion(
+                model=repo_id,
                 messages=messages,
                 max_tokens=200,
                 temperature=0.1,
-                seed=42
+                stream=False
             )
 
-            clean_output = response.choices[0].message.content.strip()
-            clean_output = clean_output.replace("[/ASSIST]", "").replace("[ASSIST]", "").strip()
-            if "\n" in clean_output and "step" not in self.name.lower():
-                 clean_output = clean_output.split("\n")[0]
+            output_text = self._parse_hf_response(clean_output)
+            output_text = output_text.replace("[/ASSIST]", "").replace("[ASSIST]", "").strip()
+            if "\n" in output_text and "step" not in self.name.lower():
+                 for line in output_text.splitlines():
+                    line = line.strip()
+                    if line:
+                        output_text = line
+                        break
 
-            return clean_output
+            return output_text
         except Exception as e:
-            return f"Error in {e}"
+            return f"Error in _fire_synapse: {type(e)}"
 
     def __rshift__(self, next_step):
         """
@@ -79,16 +121,16 @@ class NeuralChain:
     def execute(self, initial_input: str) -> list:
         results = []
         current_context = initial_input
-        original_query = initial_input 
-        
+        original_query = initial_input
+
         print(f"\n SYSTEM IGNITION FOR: '{initial_input}'")
         print("="*60)
 
         for i, synapse in enumerate(self.steps):
-            
+
             # Added this to show which step is running clearly
             print(f"\n🔹 STEP {i+1}: {synapse.name}")
-            
+
             # Special Handling for Step 5
             if i == 4 and len(results) >= 4:
                 current_context = synapse.template
@@ -97,13 +139,13 @@ class NeuralChain:
 
             # Run the step
             output = synapse._fire_synapse(current_context, original_query)
-            
+
             # Added this to print the result cleanly immediately
             print(f"   └── Result: {output}")
-            
+
             results.append(output)
             current_context = output
-            
+
         print("\n" + "="*60)
         return results
 
