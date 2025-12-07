@@ -82,7 +82,7 @@ class Synapse:
                 stream=False
             )
 
-            output_text = self._parse_hf_response(clean_output)
+            output_text = self._parse_hf_response(response)
             output_text = output_text.replace("[/ASSIST]", "").replace("[ASSIST]", "").strip()
             if "\n" in output_text and "step" not in self.name.lower():
                  for line in output_text.splitlines():
