@@ -20,7 +20,7 @@ else:
     except Exception as e:
         print("Error creating InferenceClient")
         client = None
-        
+
 import time
 import random
 from typing import List, Any
