@@ -183,6 +183,6 @@ def run_prompt_chain(query: str) -> List[str]:
     return chain_result
 
 if __name__ == __main__:
-  query = "Who is an idiot and what does being idiotic stand for?"
-  print(f"Final Chain Output: {run_prompt_chain(query)}")
+    query = "Who is an idiot and what does being idiotic stand for?"
+    print(f"Final Chain Output: {run_prompt_chain(query)}")
   
