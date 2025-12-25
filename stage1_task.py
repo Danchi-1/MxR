@@ -1,11 +1,13 @@
 import os
 from dotenv import load_dotenv
-
-
+import time
+import random
+from typing import List, Any
 try:
     from huggingface_hub import InferenceClient
 except ImportError:
     InferenceClient = None
+
 
 load_dotenv()
 hf_token = os.getenv("HF_TOKEN")
@@ -20,10 +22,6 @@ else:
     except Exception as e:
         print("Error creating InferenceClient")
         client = None
-
-import time
-import random
-from typing import List, Any
 
 class Synapse:
     """
