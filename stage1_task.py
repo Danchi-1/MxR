@@ -167,7 +167,13 @@ step_3 = Synapse(
 
 # Extract details
 step_4 = Synapse(
-    prompt_template="Category: '{{previous_output}}'. Original: '{{original_query}}'. List missing info or 'None' From the customer message extract possible information that could be needed as missing information in the next step.",
+    prompt_template=(
+        "Category: '{{previous_output}}'."
+        "Original customer message: '{{original_query}}'."
+        "From customer message, identify and extract REQUIRED information and PROVIDED information that could be a part of the missing information in the next step."
+        "Only ask for missing information not present in customer information. Do NOT repeat information already provided as missing information."
+        "Create a new {{missing_info}} and pass it to the next step."
+    ),
     name="4_EXTRACT_DETAILS"
 )
 
