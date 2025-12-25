@@ -187,7 +187,7 @@ def run_prompt_chain(query: str) -> List[str]:
     logic_flow = step_1 >> step_2 >> step_3 >> step_4 >> step_5
     chain_result = logic_flow.execute(query)
 
-    return chain_result[-1]
+    return chain_result
 
 def query(customer_query):
     query = customer_query
