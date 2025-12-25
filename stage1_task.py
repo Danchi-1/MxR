@@ -1,8 +1,7 @@
 import os
-import time
-import random
-from typing import List, Any
 from dotenv import load_dotenv
+
+
 try:
     from huggingface_hub import InferenceClient
 except ImportError:
@@ -21,6 +20,10 @@ else:
     except Exception as e:
         print("Error creating InferenceClient")
         client = None
+
+import time
+import random
+from typing import List, Any
 
 class Synapse:
     """
@@ -148,7 +151,7 @@ class NeuralChain:
 
 # Internet intent
 step_1 = Synapse(
-    prompt_template="Analyze raw text: '{{input}}'. Output format: 'User intends to [action] regarding [subject].'",
+    prompt_template="Analyze raw text: '{{input}}'. Output format: 'User intends to [action] regarding [subject]. Be specific, factual, and customer centered'",
     name="1_INTERPRET_INTENT"
 )
 
@@ -166,13 +169,13 @@ step_3 = Synapse(
 
 # Extract details
 step_4 = Synapse(
-    prompt_template="Category: '{{previous_output}}'. Original: '{{original_query}}'. List missing info or 'None'.",
+    prompt_template="Category: '{{previous_output}}'. Original: '{{original_query}}'. List missing info or 'None' From the customer message extract possible information that could be needed as missing information in the next step.",
     name="4_EXTRACT_DETAILS"
 )
 
 # Generate response
 step_5 = Synapse(
-    prompt_template="Context: {{category}}. Missing: {{missing_info}}. Draft polite response.",
+    prompt_template="Context: {{category}}. Missing: {{missing_info}}. Draft polite response. Explain {{query}}. Reassure user. Politely ask for missing info clearly stating them in a bracket. Do not use placeholders like {{customer_name}}. Maximum of 3-5 sentences long.",
     name="5_GENERATE_RESPONSE"
 )
 
@@ -180,9 +183,12 @@ def run_prompt_chain(query: str) -> List[str]:
     logic_flow = step_1 >> step_2 >> step_3 >> step_4 >> step_5
     chain_result = logic_flow.execute(query)
 
-    return chain_result
+    return chain_result[-1]
 
-if __name__ == __main__:
-    query = "Who is an idiot and what does being idiotic stand for?"
-    print(f"Final Chain Output: {run_prompt_chain(query)}")
-  
+def query(customer_query):
+    query = customer_query
+    output = run_prompt_chain(query)
+    return output
+
+customer_query = input(f"Enter your query: ")
+print(query(customer_query))
