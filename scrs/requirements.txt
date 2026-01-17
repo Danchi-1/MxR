@@ -1,2 +1,8 @@
 fastapi
-langchain_experimental
+pydantic
+python-dotenv
+chromadb
+sentence-transformers
+google-generativeai
+uvicorn
+python-multipart
