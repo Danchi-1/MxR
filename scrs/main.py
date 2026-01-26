@@ -2,6 +2,7 @@ from fastapi import FastAPI, UploadFile, File, HTTPException
 from pydantic import BaseModel
 from dotenv import load_dotenv
 import chromadb
+from chromadb import Client
 from chromadb.config import Settings
 from sentence_transformers import SentenceTransformer   
 import os
@@ -30,16 +31,19 @@ def init_llm(api_key: str, model_name: str):
     genai.configure(api_key=api_key)
     return genai.GenerativeModel(model_name)
 
-def init_chromadb(host: str):
-    client = chromadb.HttpClient(
-        host = host,
-        port = PORT,
-        settings = Settings(anonymized_telemetry=False)
-    )
-    return client.get_or_create_collection(
-        name="rag_documents",
-        metadata={"hnsw:space": "cosine"}
-    )
+def init_chromadb(persistent_dir="chroma_data"):
+    # client = chromadb.HttpClient(
+    #     host = host,
+    #     port = PORT,
+    #     settings = Settings(anonymized_telemetry=False)
+    # )
+    client = Client(Settings(
+        persist_directory=persistent_dir,
+        anonymized_telemetry=False
+    ))
+    if "documents" not in [c.name for c in client.list_collections()]:
+        client.create_collection("documents")
+    return client
 
 embedder = init_embedder(EMBED_MODEL_NAME)
 llm = init_llm(GEMINI_API_KEY, LLM_MODEL_NAME)
@@ -128,7 +132,7 @@ def load_documents(base_dir: str) -> dict:
 
         with open(path, "r", encoding="utf-8") as f:
             documents[filename] = f.read()
-        return documents
+    return documents
 
 class ChatPayload(BaseModel):
     query: str
@@ -139,20 +143,24 @@ class RechunkPayload(BaseModel):
 @app.post("/upload")
 async def upload(file: UploadFile):
     # TODO: implement upload handling
+
     if not file:
-        raise HTTPException(status_code=400, detail="No files found")
-    total_chunks = 0
+        raise HTTPException(status_code=400, detail="No file provided")
+    
+    contents = await file.read()
+    text = contents.decode("utf-8", errors="ignore")
 
-    for a_file in file:
-        text = save_files(file, RAG_DATA_DIR)
-        chunks = semantic_chunk(text, CHUNK_LENGTH)
-        embeddings = embed_chunks(chunks)
-        store_chunks(chunks, embeddings, file.filename)
+    file_path = os.path.join(RAG_DATA_DIR, file.filename)
+    with open(file_path, "w", encoding="utf-8") as f:
+        f.write(text)
+    
+    chunks = semantic_chunk(text, CHUNK_LENGTH)
+    embeddings = embed_chunks(chunks)
+    store_chunks(chunks, embeddings, file.filename)
 
-        total_chunks += len(chunks)
-    return {
-        "file_processed": len(file),
-        "chunks_created": total_chunks
+    return{
+        "filename": file.filename,
+        "chunks_created": len(chunks)
     }
 
 @app.post("/chat")
@@ -161,13 +169,13 @@ def chat(payload: ChatPayload):
     query = payload.query.strip()
     if not query:
         raise HTTPException(status_code=400, detail="Query cannot be empty")
-    
+        
     context_chunks = retrieve_context(query)
     answer = generate_response(query, context_chunks)
     return {"answer": answer}
 
 @app.post("/rechunk")
-def rechunk(payload: dict):
+def rechunk(payload: RechunkPayload):
     # TODO: implement rechunk handling
     new_chunk_length = payload.chunk_length
 
