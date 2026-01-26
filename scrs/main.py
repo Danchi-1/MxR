@@ -31,7 +31,7 @@ def init_llm(api_key: str, model_name: str):
     genai.configure(api_key=api_key)
     return genai.GenerativeModel(model_name)
 
-def init_chromadb(persistent_dir="chroma_data"):
+def init_chromadb(persistent_dir="./chroma_data"):
     # client = chromadb.HttpClient(
     #     host = host,
     #     port = PORT,
@@ -41,9 +41,8 @@ def init_chromadb(persistent_dir="chroma_data"):
         persist_directory=persistent_dir,
         anonymized_telemetry=False
     ))
-    if "documents" not in [c.name for c in client.list_collections()]:
-        client.create_collection("documents")
-    return client
+    collection = client.get_or_create_collection(name="documents")
+    return collection
 
 embedder = init_embedder(EMBED_MODEL_NAME)
 llm = init_llm(GEMINI_API_KEY, LLM_MODEL_NAME)
