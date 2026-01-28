@@ -8,7 +8,7 @@ from sentence_transformers import SentenceTransformer
 import os
 import uuid
 from typing import List
-import google.generativeai as genai
+from google import genai
 
 load_dotenv()
 EMBED_MODEL_NAME = os.getenv("EMBED_MODEL_NAME", "sentence-transformers/all-MiniLM-L6-v2")
@@ -27,16 +27,14 @@ app = FastAPI()
 def init_embedder(model_name: str):
     return SentenceTransformer(model_name)
 
-def init_llm(api_key: str, model_name: str):
-    genai.configure(api_key=api_key)
-    return genai.GenerativeModel(model_name)
+# def init_llm(api_key: str, model_name: str):
+#     genai.configure(api_key=api_key)
+#     return genai.GenerativeModel(model_name)
 
-def init_chromadb(persistent_dir="./chroma_data"):
-    # client = chromadb.HttpClient(
-    #     host = host,
-    #     port = PORT,
-    #     settings = Settings(anonymized_telemetry=False)
-    # )
+def init_llm(api_key: str):
+    return genai.Client(api_key=api_key)
+
+def init_chromadb(persistent_dir: str):
     client = Client(Settings(
         persist_directory=persistent_dir,
         anonymized_telemetry=False
@@ -44,16 +42,22 @@ def init_chromadb(persistent_dir="./chroma_data"):
     collection = client.get_or_create_collection(name="documents")
     return collection
 
-embedder = init_embedder(EMBED_MODEL_NAME)
-llm = init_llm(GEMINI_API_KEY, LLM_MODEL_NAME)
+embedder = None
+llm = init_llm(GEMINI_API_KEY)  
 collection = init_chromadb(CHROMA_DB_HOST)
 
-def save_files(file: UploadFile, base_dir: str) -> str:
-    content = file.file.read().decode("utf-8", errors="ignore")
-    path = os.path.join(base_dir, file.filename)
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(content)
-    return content
+def get_embedder():
+    global embedder
+    if embedder is None:
+        embedder = init_embedder(EMBED_MODEL_NAME)
+    return embedder
+
+# def save_files(file: UploadFile, base_dir: str) -> str:
+#     content = file.file.read().decode("utf-8", errors="ignore")
+#     path = os.path.join(base_dir, file.filename)
+#     with open(path, "w", encoding="utf-8") as f:
+#         f.write(content)
+#     return content
 
 def semantic_chunk(text: str, chunk_length: int) -> List[str]:
     sentences = text.split('. ')
@@ -73,7 +77,8 @@ def semantic_chunk(text: str, chunk_length: int) -> List[str]:
     return chunks
 
 def embed_chunks(chunks: List[str]) -> List[List[float]]:
-    return embedder.encode(
+    emb = get_embedder()
+    return emb.encode(
         chunks,
         convert_to_numpy=True
     ).tolist()
@@ -115,11 +120,18 @@ def generate_response(query: str, context_chunks: List[str]) -> str:
     Question: {query}
     Answer:
     """
-    response = llm.generate_content(prompt)
+    try:
+        response = llm.models.generate_content(
+            model=LLM_MODEL_NAME,
+            contents=prompt
+        )
+    except Exception as e:
+        return f"error: {str(e)}"
     return response.text
 
 def delete_chunks():
-    collection.delete(where={})
+    global collection
+    collection = init_chromadb(CHROMA_DB_HOST)
 
 def load_documents(base_dir: str) -> dict:
     documents = {}
@@ -132,6 +144,10 @@ def load_documents(base_dir: str) -> dict:
         with open(path, "r", encoding="utf-8") as f:
             documents[filename] = f.read()
     return documents
+
+@app.on_event("startup")
+def startup_event():
+    get_embedder()
 
 class ChatPayload(BaseModel):
     query: str
