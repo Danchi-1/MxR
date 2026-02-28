@@ -1,3 +1,4 @@
 virenv
 .env
 __pycache__
+data
