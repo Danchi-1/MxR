@@ -3,14 +3,52 @@ import json
 from dotenv import load_dotenv
 from openai import OpenAI
 
+# optionally import Gemini's SDK if available
+try:
+    import google.generativeai as genai
+except ImportError:
+    genai = None
+
 load_dotenv()
 
-client = OpenAI(
-    api_key=os.getenv("OPENROUTER_API_KEY"),
-    base_url="https://openrouter.ai/api/v1"
-)
-
+# choose a client factory based on environment variables
 MODEL = os.getenv("LLM_MODEL_NAME", "openai/gpt-4o-mini")
+
+# helper for building chat completions regardless of provider
+
+def _create_chat_completion(messages, tools):
+    """Dispatch to OpenAI/OpenRouter or Gemini based on env.
+
+    - If GEMINI_API_KEY is set and the Gemini SDK is installed, use Gemini.
+    - Otherwise default to OpenAI via the OpenRouter base URL.
+    """
+    if os.getenv("GEMINI_API_KEY") and genai is not None:
+        # configure Gemini client each call (idempotent)
+        genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+        # the generativeai library uses `.chat.completions.create`
+        return genai.chat.completions.create(
+            model=MODEL,
+            messages=messages,
+            tools=tools,
+        )
+
+    # if we reach here, either gemini isn't requested/available or no key was provided
+    openrouter_key = os.getenv("OPENROUTER_API_KEY")
+    if not openrouter_key:
+        raise EnvironmentError(
+            "No API key provided. Set GEMINI_API_KEY to use Gemini or OPENROUTER_API_KEY to use OpenAI/OpenRouter."
+        )
+
+    client = OpenAI(
+        api_key=openrouter_key,
+        base_url="https://openrouter.ai/api/v1",
+    )
+    return client.chat.completions.create(
+        model=MODEL,
+        messages=messages,
+        tools=tools,
+    )
+
 
 
 # ---------- TOOL DATA ----------
@@ -134,11 +172,8 @@ def main():
         }
     ]
 
-    response = client.chat.completions.create(
-        model=MODEL,
-        messages=messages,
-        tools=tools
-    )
+    # dispatch to the appropriate provider
+    response = _create_chat_completion(messages, tools)
 
     message = response.choices[0].message
 
@@ -169,11 +204,7 @@ def main():
                 "content": json.dumps(result)
             })
 
-        response = client.chat.completions.create(
-            model=MODEL,
-            messages=messages,
-            tools=tools
-        )
+        response = _create_chat_completion(messages, tools)
 
         message = response.choices[0].message
 
