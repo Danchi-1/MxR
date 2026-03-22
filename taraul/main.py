@@ -4,12 +4,14 @@ from dotenv import load_dotenv
 
 from langchain_openai import ChatOpenAI
 from langchain.tools import tool
-from langchain.schema import Document
-from langchain.agents import initialize_agent, AgentType
+from langchain_core.documents import Document
+from langchain.agents import create_tool_calling_agent, AgentExecutor
+from langchain_core.prompts import ChatPromptTemplate
+from langchain.agents import create_agent
 from langchain_community.vectorstores import Chroma
 from langchain_community.embeddings import SentenceTransformerEmbeddings
 from langchain_community.document_loaders import DirectoryLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 
 load_dotenv()
@@ -69,12 +71,19 @@ tools = [
     rag_search,
 ]
 
-agent = initialize_agent(
-    tools,
-    llm,
-    agent=AgentType.OPENAI_FUNCTIONS,
-    verbose=True,
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "You are a helpful assistant."),
+    ("human", "{input}"),
+    ("placeholder", "{agent_scratchpad}"),
+])
+agent = create_agent(
+    model=llm,
+    tools=tools,
+    system_prompt="You are a helpful assistant."
 )
+
+agent = create_tool_calling_agent(llm, tools, prompt)
+agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
 
 def main():
     if len(sys.argv) < 2:
@@ -82,7 +91,9 @@ def main():
         return
     query = sys.argv[1]
     save_to_memory(query)
-    response = agent.run(query)
+    response = agent_executor.invoke({"input": query})["output"]
+    response_state = agent.invoke({"messages": [{"role": "user", "content": query}]})
+    response = response_state["messages"][-1].content
     save_to_memory(f"Model reply: {response}")
     history_docs = vectorstore.similarity_search(query, k=10)
 
