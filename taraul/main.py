@@ -7,14 +7,14 @@ from langchain.tools import tool
 from langchain_core.documents import Document
 from langchain.agents import create_tool_calling_agent, AgentExecutor
 from langchain_core.prompts import ChatPromptTemplate
-from langchain.agents import create_agent
 from langchain_community.vectorstores import Chroma
-from langchain_community.embeddings import SentenceTransformerEmbeddings
+from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.document_loaders import DirectoryLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 
 load_dotenv()
+os.environ["HUGGINGFACEHUB_API_TOKEN"] = os.getenv("HF_API_KEY", "")
 llm = ChatOpenAI(
     openai_api_key=os.getenv("OPENROUTER_API_KEY"),
     base_url="https://openrouter.ai/api/v1",
@@ -22,8 +22,13 @@ llm = ChatOpenAI(
     temperature=0
 )
 
-embeddings = SentenceTransformerEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-loader = DirectoryLoader("./data", glob="**/*")
+embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+loader = DirectoryLoader(
+    "/knowledge_base",
+    glob="**/*",
+    show_progress=True,
+    use_multithreading=True,
+)
 documents = loader.load()
 text_splitter = RecursiveCharacterTextSplitter(
     chunk_size=500,
@@ -43,7 +48,7 @@ def save_to_memory(text):
 
 @tool
 def get_flight_schedule(query: str):
-    """Get flight details between cities"""
+    """Useful for finding flight duration and ticket price between cities."""
     if "lagos" in query.lower() and "nairobi" in query.lower():
         return "Flight Lagos → Nairobi: 5 hours, $450 one-way"
     return "Route not available"
@@ -61,7 +66,7 @@ def convert_currency(query: str):
 @tool
 def rag_search(query: str):
     """Search internal knowledge base"""
-    docs = retriever.get_relevant_documents(query)
+    docs = retriever.invoke(query)
     return "\n".join([doc.page_content for doc in docs[:3]])
 
 tools = [
@@ -76,11 +81,6 @@ prompt = ChatPromptTemplate.from_messages([
     ("human", "{input}"),
     ("placeholder", "{agent_scratchpad}"),
 ])
-agent = create_agent(
-    model=llm,
-    tools=tools,
-    system_prompt="You are a helpful assistant."
-)
 
 agent = create_tool_calling_agent(llm, tools, prompt)
 agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
@@ -90,16 +90,18 @@ def main():
         print("No query provided. Please provide a query")
         return
     query = sys.argv[1]
-    save_to_memory(query)
+    save_to_memory(f"User: {query}")
     response = agent_executor.invoke({"input": query})["output"]
-    response_state = agent.invoke({"messages": [{"role": "user", "content": query}]})
-    response = response_state["messages"][-1].content
-    save_to_memory(f"Model reply: {response}")
-    history_docs = vectorstore.similarity_search(query, k=10)
+    save_to_memory(f"Assistant: {response}")
+    relevant_history_docs = vectorstore.similarity_search(query, k=10)
+    full_history_docs = vectorstore.get()["documents"]
 
-    print(f"=> History Docs: ")
-    for doc in history_docs:
+    print(f"=> Relevant History Docs: ")
+    for doc in relevant_history_docs:
         print(doc.page_content)
+    print(f"=> Full History Docs: ")
+    for doc in full_history_docs:
+        print(doc)
     print(f"Last Query: {query}")
     print(f"Final Response: {response}")
 
